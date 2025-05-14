@@ -2,9 +2,14 @@ from bs4 import BeautifulSoup
 import requests
 from requests.exceptions import RequestException
 
+from fake_useragent import UserAgent
+import logging
+
 ALL_SITES_URL = 'https://www.craigslist.org/about/sites'
 SITE_URL = 'https://%s.craigslist.org'
-USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.4 Safari/605.1.15'
+# USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.4 Safari/605.1.15'
+UA = UserAgent(use_cache_server=False)
+USER_AGENT = UA.random
 
 
 def bs(content):
