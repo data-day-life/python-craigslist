@@ -25,7 +25,7 @@ RESULTS_PER_REQUEST = 100  # Craigslist returns 100 results per request
 
 
 class CraigslistBase(object):
-    """ Base class for all Craiglist wrappers. """
+    """ Base class for all Craigslist wrappers. """
 
     url_templates = {
         'base': 'http://%(site)s.craigslist.org',
@@ -33,7 +33,7 @@ class CraigslistBase(object):
         'area': 'http://%(site)s.craigslist.org/search/%(area)s/%(category)s'
     }
 
-    default_site = 'sfbay'
+    default_site = 'seattle'
     default_category = None
 
     base_filters = {
@@ -63,12 +63,7 @@ class CraigslistBase(object):
                  log_level=logging.ERROR):
         # Logging
         self.set_logger(logging.DEBUG, init=True)
-
-        chrome_options = webdriver.ChromeOptions()
-        chrome_options.add_argument("--no-sandbox")
-        chrome_options.add_argument("--headless")
-        chrome_options.add_argument("--disable-gpu")
-        self.driver = webdriver.Chrome(options=chrome_options)
+        self.driver = None  # Initialize driver as None
 
         self.site = site or self.default_site
         if self.site not in ALL_SITES:
@@ -90,6 +85,24 @@ class CraigslistBase(object):
                                    'category': self.category}
 
         self.filters = self.get_filters(filters)
+
+    def __enter__(self):
+        """Initialize resources when entering the context."""
+        chrome_options = webdriver.ChromeOptions()
+        chrome_options.add_argument("--no-sandbox")
+        chrome_options.add_argument("--headless")
+        chrome_options.add_argument("--disable-gpu")
+        self.driver = webdriver.Chrome(options=chrome_options)
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Clean up resources when exiting the context."""
+        if self.driver:
+            self.driver.quit()
+            self.driver = None
+        if exc_type:
+            self.logger.error("An exception occurred: %s", exc_val)
+        return False  # Propagate exceptions if any
 
     def get_filters(self, filters):
         """Parses filters passed by the user into GET parameters."""
