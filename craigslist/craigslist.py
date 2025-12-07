@@ -142,7 +142,7 @@ class CraigslistGigs(CraigslistBase):
 class CraigslistHousing(CraigslistBase):
     """ Craigslist housing wrapper. """
 
-    default_category = 'hhh'
+    default_category = 'roo'
     custom_result_fields = True
 
     extra_filters = {

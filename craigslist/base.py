@@ -1,13 +1,8 @@
 import logging
-try:
-    from Queue import Queue  # PY2
-except ImportError:
-    from queue import Queue  # PY3
+
+from queue import Queue
 from threading import Thread
-try:
-    from urlparse import urljoin  # PY2
-except ImportError:
-    from urllib.parse import urljoin  # PY3
+from urllib.parse import urljoin
 
 from six import iteritems
 from six.moves import range
@@ -19,9 +14,31 @@ from . import utils
 import sys
 from selenium import webdriver
 import time
+import json
+
 
 ALL_SITES = utils.get_all_sites()  # All the Craiglist sites
 RESULTS_PER_REQUEST = 100  # Craigslist returns 100 results per request
+
+
+def strip_schema_keys(data):
+    """
+    Recursively removes '@context' and '@type' keys from a dictionary or list.
+    """
+    if isinstance(data, dict):
+        # Create a new dict without @context and @type keys
+        return {
+            key: strip_schema_keys(value)
+            for key, value in data.items()
+            if key not in ('@context', '@type')
+        }
+    elif isinstance(data, list):
+        # Recursively process each item in the list
+        return [strip_schema_keys(item) for item in data]
+    else:
+        # Return the value as-is (strings, numbers, etc.)
+        return data
+
 
 
 class CraigslistBase(object):
@@ -159,6 +176,14 @@ class CraigslistBase(object):
         sublinks = soup.find('ul', {'class': 'sublinks'})
         return sublinks and sublinks.find('a', text=area) is not None
 
+    def get_clean_json_content(self, soup):
+        # Selects invisible json content that contains additional data (such as geolocation)
+        script_tag = soup.find('script', {'type': 'application/ld+json', 'id': 'ld_searchpage_results'})
+        json_content = json.loads(script_tag.string)
+        cleaned_content = strip_schema_keys(json_content)
+        cleaned_content = [el['item'] for el in cleaned_content['itemListElement']]
+        return cleaned_content
+
     def get_results_approx_count(self, soup=None):
         """
         Gets (approx) amount of results to be returned by `get_results`.
@@ -168,7 +193,6 @@ class CraigslistBase(object):
         Also note that this will make an extra request to Craigslist (if `soup`
         is not provided).
         """
-
         if soup is None:
             # response = utils.requests_get(self.url, params=self.filters,
             #                               logger=self.logger)
@@ -177,11 +201,9 @@ class CraigslistBase(object):
             # response.raise_for_status()  # Something failed?
             self.driver.get(self.url)
             soup = utils.bs(self.driver.page_source)
+        return len(self.get_clean_json_content(soup)) if soup else None
 
-        totalcount = soup.find('span', {'class': 'totalcount'})
-        return int(totalcount.text) if totalcount else None
-
-    def get_results(self, limit=None, start=0, sort_by=None, geotagged=False,
+    def get_results(self, limit=0, start=0, sort_by=None, geotagged=False,
                     include_details=False):
         """
         Gets results from Craigslist based on the specified filters.
@@ -210,24 +232,23 @@ class CraigslistBase(object):
             # self.logger.info('GET %s', response.url)
             # self.logger.info('Response code: %s', response.status_code)
             # response.raise_for_status()  # Something failed?
-            new_url = furl(self.url, self.filters).url
-
+            new_url = furl(self.url+'#search=2~list~0', self.filters).url
             self.driver.get(new_url)
-
             time.sleep(2)
 
             soup = utils.bs(self.driver.page_source)
             if not total:
-                total = self.get_results_approx_count(soup=soup)
+                total = self.get_results_approx_count(soup)
+                limit = total if limit > total else limit
 
-            rows = soup.find('ol')
+            cleaned_content = self.get_clean_json_content(soup)
 
-            for row in rows.find_all('li', {'class': 'cl-search-result'},
+            rows = soup.find('div', {'class': 'results'})
+            for row in rows.find_all('div', {'class': 'cl-search-result cl-search-view-mode-list'},
                                      recursive=False):
                 if limit is not None and results_yielded >= limit:
                     break
-                self.logger.debug('Processing %s of %s results ...',
-                                  total_so_far + 1, total or '(undefined)')
+                self.logger.debug('Processing %s of %s results ...',total_so_far + 1, total or '(undefined)')
 
                 yield self.process_row(row, geotagged, include_details)
 
@@ -246,15 +267,15 @@ class CraigslistBase(object):
 
         link = row.find('span', {'class': 'label'})
         name = link.text
-        a = row.find('a', {'class': 'main'})
+        a = row.find('a', {'class': 'cl-app-anchor'})
         url = a.attrs['href']
 
-        time = row.find('div', {'class': 'meta'})
-        datetime = time.text
+        time = row.find('div', {'class': 'meta'}).span.attrs['title']
+        datetime = time
         price = row.find('span', {'class': 'priceinfo'})
-        where = row.find('div', {'class': 'meta'})
+        where = row.find('div', {'class': 'result-data'})
         if where:
-            where = where.text.strip()[1:-1]  # remove ()
+            where = where.p.text
         tags_span = row.find('span', {'class': 'result-tags'})
         tags = tags_span.text if tags_span else ''
 
@@ -406,7 +427,7 @@ class CraigslistBase(object):
 
         # self.logger.warning("GET %s returned not OK response code: %s "
         #                     "(skipping)", url, response.status_code)
-        return None
+        # return None
 
     def geotag_results(self, results, workers=8):
         """

@@ -8,8 +8,8 @@ import logging
 ALL_SITES_URL = 'https://www.craigslist.org/about/sites'
 SITE_URL = 'https://%s.craigslist.org'
 # USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.4 Safari/605.1.15'
-UA = UserAgent(use_cache_server=False)
-USER_AGENT = UA.random
+UA = UserAgent()
+USER_AGENT = UA.chrome
 
 
 def bs(content):
